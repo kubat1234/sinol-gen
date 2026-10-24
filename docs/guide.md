@@ -187,7 +187,7 @@ tests), after the test's own modifiers and checks.
 
 `--list` is the way back from a test to the code: when `abc2c` kills a
 solution or fails the verifier, it shows the line and the arguments that made it.
-sinol-make keeps the compiled ingen in `.cache/executables/abcingen.e`.
+sinol-make keeps the compiled ingen in `.cache/executables/abcingen.cpp.e`.
 
 Errors — the exit code is then 1, so `sinol-make gen` fails:
 
