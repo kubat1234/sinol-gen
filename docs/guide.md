@@ -88,14 +88,24 @@ To change one detail of a random test, use a modifier:
 
 ## Seeds
 
-Each test gets its own `gen::Rng`, seeded from the test's name (`"2c"`), so:
+Each test gets its own `gen::Rng`, seeded from its group, its arguments as
+written (`gen::near(MAXN)`, not the drawn value) or its text, and which call
+of the same function with the same arguments it is — not from its name. So:
 
 - the output is the same on every machine and compiler;
-- adding a test at the end of a group does not change the others;
+- deleting or moving a test usually changes no other test. Usually: deleting
+  one of several identical calls (`for (...) g.test(f, MAXN);`) changes the
+  later ones, and different functions with the same arguments share random
+  numbers;
 - `./abcingen 2c` regenerates exactly that test.
 
-`.seed(x)` uses `x` instead of the name: to re-roll one bad test, or to get the
-same test in another package — `g.test(f, args...).seed(x)` gives the same test anywhere.
+**To be sure** that tests never change when others are deleted, give every
+random test its own, distinct `.seed(x)`. Two equal seeds are an error.
+`./abcingen --list` shows each test's seed: `.seed(<that number>)` keeps a test
+exactly as it is. A new number re-rolls a bad test.
+
+Up to sinol-gen 1.x the seed came from the test's name; the same test of an
+old package: `.seed(gen::detail::fnv1a("1c"))`.
 
 Never use `rand()`, `random_device`, `std::shuffle` or `std::uniform_int_distribution`
 in an ingen: their results differ between compilers. Use `R`.

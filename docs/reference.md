@@ -118,7 +118,7 @@ Work on any test struct with `n` and `edges`; also callable directly, e.g.
 | `g.example(x)`, `g.ocen(x)`, `g.group(k)`, `g.test(x)` | the test list, see [guide.md](guide.md#the-test-list) |
 | `.then(m)`, `\| m` | modifier, on a test or a group |
 | `.check(c, "what")`, `\| gen::check(c, "what")` | check, on a test or a group |
-| `.seed(x)` | fixed seed instead of the one from the name |
+| `.seed(x)` | fixed seed instead of the automatic one; unique in the ingen |
 | `g.max_size_mb(x)` | error for tests bigger than x MB |
 | `g.done()` | write (or `--list`) the tests; return it from `main` |
 | `SINOL_GEN_VERSION` | version string |

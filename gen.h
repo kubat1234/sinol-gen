@@ -17,13 +17,14 @@
 //   ./abcingen           all tests        ./abcingen 2 2c 1ocen   only these
 //   ./abcingen --list    test -> line in the ingen, arguments, seed, size
 //
-// Every test has its own random generator, seeded from its name ("2c") or from
-// .seed(x). The output is the same on every machine and compiler. Needs C++17.
+// Every test has its own random generator, seeded from its group, arguments (or
+// text) and which of the identical calls it is, or from .seed(x). The output is
+// the same on every machine and compiler. Needs C++17.
 
 #ifndef SINOL_GEN_H
 #define SINOL_GEN_H
 
-#define SINOL_GEN_VERSION "1.0.0"
+#define SINOL_GEN_VERSION "2.0.0"
 
 #include <algorithm>
 #include <cassert>
@@ -43,6 +44,7 @@
 #include <string>
 #include <tuple>
 #include <type_traits>
+#include <typeinfo>
 #include <utility>
 #include <vector>
 
@@ -694,10 +696,11 @@ struct Here {
     explicit Here(int l) : line(l) {}
 };
 
-template <class X> std::string show(const X& x) {
+// full: strings are not shortened (for the seed, not for --list)
+template <class X> std::string show(const X& x, bool full = false) {
     if constexpr (std::is_convertible_v<const X&, std::string>) {
         std::string s = x;
-        return s.size() > 20 ? "\"" + s.substr(0, 17) + "...\"" : "\"" + s + "\"";
+        return !full && s.size() > 20 ? "\"" + s.substr(0, 17) + "...\"" : "\"" + s + "\"";
     } else if constexpr (is_streamable<X>::value) {
         std::ostringstream o;
         o << x;
@@ -754,7 +757,8 @@ template <class T = void> class Generator {
         std::string name, what;
         int group = 0, line = 0, example = -1;  // example: index among g.example()s
         bool has_seed = false;
-        ull seed = 0;
+        ull seed = 0, auto_seed = 0;
+        std::string key, fn;  // what the test is (for auto_seed); fn: which function, within this run only
         std::function<void(Rng&, std::ostream&)> write;  // text and stream tests
         std::function<Value(Rng&)> make;                 // tests made as T
         Rules rules;
@@ -786,8 +790,8 @@ template <class T = void> class Generator {
             e().rules.checks.push_back({to_pred(std::move(pred)), std::move(what), h.line});
             return *this;
         }
-        // A fixed seed instead of the one from the test name: re-rolls a bad test,
-        // and the same call gives the same test in any package.
+        // A fixed seed instead of the automatic one: re-rolls a bad test. Two tests
+        // of a package cannot have the same seed.
         Ref& seed(ull s) {
             e().has_seed = true, e().seed = s;
             return *this;
@@ -922,10 +926,15 @@ template <class T = void> class Generator {
         }
         for (auto& o : only)
             if (!selected_by(o)) std::cerr << "gen: no test or group " << o << "\n", errors_++;
+        std::map<ull, std::string> seeds;  // .seed(x) -> name
+        for (auto& e : entries_)
+            if (e.has_seed)
+                if (auto [it, fresh] = seeds.insert({e.seed, e.name}); !fresh)
+                    error(e, "the same .seed(" + std::to_string(e.seed) + ") as " + id_ + it->second);
         std::signal(SIGABRT, detail::on_abort);
         std::map<std::string, std::string> seen;  // content -> name
         size_t written = 0;
-        if (list) std::printf("%-10s %-22s %-18s %10s %8s  %s\n", "test", "line", "seed", "size", "time", "arguments");
+        if (list) std::printf("%-10s %-22s %-26s %10s %8s  %s\n", "test", "line", "seed", "size", "time", "arguments");
         for (auto& e : entries_) {
             if (!only.empty() && !std::any_of(only.begin(), only.end(), [&](auto& o) { return matches(e, o); })) continue;
             std::snprintf(detail::crash_info, sizeof detail::crash_info, "gen: crashed while generating %s%s (%s:%d)\n",
@@ -943,7 +952,7 @@ template <class T = void> class Generator {
             if (auto [it, fresh] = seen.insert({content, e.name}); !fresh) error(e, "identical to " + id_ + it->second);
             if (max_bytes_ && content.size() > max_bytes_) error(e, "bigger than the limit: " + detail::human_size(content.size()));
             if (list) {
-                std::printf("%-10s %-22s %-18s %10s %6.0fms  %s\n", (id_ + e.name).c_str(),
+                std::printf("%-10s %-22s %-26s %10s %6.0fms  %s\n", (id_ + e.name).c_str(),
                             (file_ + ":" + std::to_string(e.line)).c_str(), seed_text(e).c_str(),
                             detail::human_size(content.size()).c_str(), ms,
                             (shown_.empty() ? e.what : "(" + shown_ + ")").c_str());
@@ -964,6 +973,7 @@ template <class T = void> class Generator {
     std::vector<Entry> entries_;
     std::map<int, Rules> groups_;
     std::map<int, int> count_;  // group -> tests so far (0 = examples, -1 = ocen)
+    std::map<std::string, int> calls_;  // key + function -> identical calls so far
     int current_ = 0, errors_ = 0;
     size_t max_bytes_ = 0;
     bool done_ = false;
@@ -985,6 +995,14 @@ template <class T = void> class Generator {
             e.name = std::to_string(++count_[-1]) + "ocen";
         }
         set_maker(e, std::forward<A>(a)...);
+        // The seed comes from what the test is, not from its position: the group,
+        // the arguments (or the text / value) and which of the identical calls of
+        // the same function it is. Removing a test changes only the identical
+        // calls after it. Different functions with the same arguments get the
+        // same random numbers.
+        std::string key = (kind == TEST ? std::to_string(e.group) : kind == EXAMPLE ? "0" : "ocen") + "|" + e.key;
+        int k = calls_[key + "|" + e.fn]++;
+        e.auto_seed = detail::fnv1a(key + "#" + std::to_string(k));
         entries_.push_back(std::move(e));
         return Ref(this, entries_.size() - 1);
     }
@@ -997,16 +1015,23 @@ template <class T = void> class Generator {
             if (text.size() >= 2 && text.compare(text.size() - 2, 2, "\n\n") == 0)
                 std::cerr << file_ << ":" << e.line << ": gen: warning: the test ends with an empty line\n";
             e.what = "text";
+            e.key = "text:" + text;
             e.write = [text](Rng&, std::ostream& out) { out << text; };
         } else if constexpr (sizeof...(A) == 0 && !std::is_void_v<T> && std::is_same_v<D, Value>) {
             Value v = std::forward<X>(x);
             e.what = "value";
+            std::ostringstream o;
+            o << v;
+            e.key = "value:" + o.str();
             e.make = [v](Rng&) { return v; };
         } else {
             static_assert(std::is_invocable_v<D&, Rng&, std::ostream&, detail::drawn_t<A>...> ||
                               std::is_invocable_v<D&, Rng&, detail::drawn_t<A>...>,
                           "g.test(f, args...): f must be f(gen::Rng&, args...) or f(gen::Rng&, std::ostream&, args...)");
             e.what = "(" + describe(a...) + ")";
+            e.key = "call:" + describe_full(a...);
+            e.fn = typeid(D).name();
+            if constexpr (std::is_pointer_v<D>) e.fn += ":" + std::to_string(reinterpret_cast<std::uintptr_t>(static_cast<D>(x)));
             auto call = [this, f = D(std::forward<X>(x)), args = std::make_tuple(std::decay_t<A>(std::forward<A>(a))...)](
                             Rng& R, auto&... extra) mutable {
                 auto copy = args;
@@ -1039,6 +1064,11 @@ template <class T = void> class Generator {
         ((s += (s.empty() ? "" : ", ") + detail::show(a)), ...);
         return s;
     }
+    template <class... A> static std::string describe_full(const A&... a) {
+        std::string s;
+        ((s += ", " + detail::show(a, true)), ...);
+        return s;
+    }
 
     template <class F> static Mod to_mod(F f) {
         if constexpr (std::is_invocable_v<F&, Rng&, Value&>) {
@@ -1065,7 +1095,7 @@ template <class T = void> class Generator {
     }
 
     std::string generate(Entry& e) {
-        Rng R(e.has_seed ? e.seed : detail::fnv1a(e.name));
+        Rng R(e.has_seed ? e.seed : e.auto_seed);
         std::ostringstream out;
         if constexpr (!std::is_void_v<T>) {
             if (e.make) {
@@ -1095,9 +1125,8 @@ template <class T = void> class Generator {
     }
 
     std::string seed_text(const Entry& e) const {
-        char buf[32];
-        std::snprintf(buf, sizeof buf, e.has_seed ? "%llu" : "name", e.has_seed ? e.seed : 0ULL);
-        return buf;
+        // the automatic seed too: .seed(<it>) pins the test with its current content
+        return std::to_string(e.has_seed ? e.seed : e.auto_seed) + (e.has_seed ? " fixed" : "");
     }
 
     // "2" = group 2, "0" = the examples, "ocen" = all ocen tests, "2c" / "0a" / "1ocen" = one test
