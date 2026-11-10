@@ -6,8 +6,8 @@ One header, `gen.h`, for input generators (`ingen`) of
 - tests are plain function calls `g.test(f, args...)`, in loops if you like, with random
   arguments too: `g.test(f, gen::near(MAXN))`;
 - names `abc0`, `abc1ocen`, `abc1a`, `abc1b` … are given automatically;
-- every test has its own random generator: the same test on every machine, and
-  adding a test does not change the others;
+- every test has its own random generator: the same test on every machine and
+  compiler;
 - a test can be a struct: modify it (`| gen::relabel`), check it
   (`| gen::check(...)`), print it in one place;
 - all tests live in the ingen, statement examples and ocen tests too;
@@ -66,18 +66,18 @@ int main(int argc, char* argv[]) {
 
 ```
 $ ./treingen --list
-test       line              seed     size   time  arguments
-tre0       treingen.cpp:25   name     10 B    0ms  text
-tre1ocen   treingen.cpp:26   name     40 B    0ms  (10)
-tre1a      treingen.cpp:29   name      2 B    0ms  text
-tre1b      treingen.cpp:31   name     41 B    0ms  (10)
-tre1c      treingen.cpp:31   name    585 B    0ms  (100)
-tre1d      treingen.cpp:31   name   7.6 KB    0ms  (1000)
-tre1e      treingen.cpp:32   name   7.7 KB    0ms  (1000, 500)
-tre2a      treingen.cpp:35   name   2.5 MB   18ms  (200000)
-tre2b      treingen.cpp:36   name   2.5 MB   18ms  (199999)
-tre3a      treingen.cpp:39   7      2.5 MB   18ms  (200000)
-tre3b      treingen.cpp:40   name   2.4 MB   14ms  (200000, 100000)
+test       line                   seed                             size     time  arguments
+tre0       treingen.cpp:27        7593397132965728532              10 B      0ms  text
+tre1ocen   treingen.cpp:28        10617943107078974372             40 B      0ms  (10)
+tre1a      treingen.cpp:31        1159845466485833395               2 B      0ms  text
+tre1b      treingen.cpp:33        7170536774046083736              40 B      0ms  (10)
+tre1c      treingen.cpp:33        11632814458572847234            580 B      0ms  (100)
+tre1d      treingen.cpp:33        1607719976114452912            7.6 KB      0ms  (1000)
+tre1e      treingen.cpp:34        3598331830210562909            7.7 KB      0ms  (1000, 500)
+tre2a      treingen.cpp:37        1353413588987421006            2.5 MB     39ms  (200000)
+tre2b      treingen.cpp:38        16118672018387402406           2.5 MB     24ms  (199999)
+tre3a      treingen.cpp:41        7 fixed                        2.5 MB     27ms  (200000)
+tre3b      treingen.cpp:42        3485285868203599972            2.5 MB     22ms  (200000, 100000)
 ```
 
 For a simple task the functions can write the test directly, without a struct:
@@ -95,7 +95,18 @@ uploaded. Needs C++17 and compiles with sinol-make's `-Wconversion -Werror`.
 
 ## Development
 
-`tests/run.sh` runs everything on gcc and clang, C++17/20/23. A new version never
-changes the tests that an existing ingen generates (golden values in
-`tests/test.cpp`); if that is ever unavoidable, the major version in
-`SINOL_GEN_VERSION` changes. MIT license.
+`tests/run.sh` runs everything on gcc and clang, C++17/20/23. MIT license.
+
+**Releasing:** change `SINOL_GEN_VERSION` in `gen.h` (the current version is
+there) and push to `main`; the `release` workflow runs the tests, tags
+`v<version>` and creates the GitHub release. `contest.py update gen` takes the
+newest tag. Which number to raise:
+
+- **major** (`2.0.0` → `3.0.0`): an existing ingen generates other tests or no
+  longer compiles. The golden values in `tests/` fail — never just update them
+  in a minor or patch release;
+- **minor** (`2.0.0` → `2.1.0`): something new (a function, an option); every
+  existing ingen gives the same tests;
+- **patch** (`2.0.0` → `2.0.1`): a fix or docs; the same tests.
+
+Several changes can wait on `main` and go out in one release.

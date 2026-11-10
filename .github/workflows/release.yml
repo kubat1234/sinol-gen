@@ -1,0 +1,40 @@
+# Releases follow SINOL_GEN_VERSION in gen.h: when main has a version that has
+# no tag yet, the tests run and v<version> is tagged and released. To release,
+# change that one line (see "Versions" in README.md); nothing else to do.
+name: release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: version
+        id: v
+        run: |
+          v=$(sed -n 's/^#define SINOL_GEN_VERSION "\(.*\)"/\1/p' gen.h)
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "bad SINOL_GEN_VERSION: $v"; exit 1; }
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+            echo "v$v is already released"; exit 0
+          fi
+          last=$(git tag --sort=-v:refname | head -n 1)
+          if [ -n "$last" ] && [ "$(printf '%s\n%s\n' "${last#v}" "$v" | sort -V | tail -n 1)" != "$v" ]; then
+            echo "SINOL_GEN_VERSION $v is older than $last"; exit 1
+          fi
+          echo "version=$v" >>"$GITHUB_OUTPUT"
+          echo "last=$last" >>"$GITHUB_OUTPUT"
+      - if: steps.v.outputs.version
+        run: sudo apt-get install -yq clang && tests/run.sh
+      - if: steps.v.outputs.version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
+          LAST: ${{ steps.v.outputs.last }}
+        run: |
+          git tag "v$V" && git push origin "v$V"
+          gh release create "v$V" --title "sinol-gen $V" --generate-notes ${LAST:+--notes-start-tag "$LAST"}
